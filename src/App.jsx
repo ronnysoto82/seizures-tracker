@@ -139,11 +139,15 @@ function LoginScreen({ onLogin }) {
   return (
     <div style={{ background:C.bg,minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 24px",fontFamily:"'Inter',system-ui,sans-serif" }}>
       <div style={{ marginBottom:32,textAlign:"center" }}>
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={C.teal} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom:12 }}>
-          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-        </svg>
+        <div style={{ display:"flex",justifyContent:"center",marginBottom:16 }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={C.teal} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+        </div>
         <div style={{ fontSize:24,fontWeight:800,color:C.text }}>Seizures Tracker</div>
-        <div style={{ fontSize:13,color:C.muted,marginTop:4 }}>Sign in to continue</div>
+        <div style={{ fontSize:12,color:C.muted,lineHeight:1.6,marginTop:10,maxWidth:300,margin:"10px auto 0" }}>
+          This system is for authorised use only. Unauthorised access is strictly prohibited and may be subject to legal action.
+        </div>
       </div>
       <div style={{ width:"100%",maxWidth:380,background:C.surface,borderRadius:20,padding:24,border:`1px solid ${C.border}` }}>
         {error && <div style={{ background:C.redDim,border:`1px solid ${C.red}`,borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:C.red }}>{error}</div>}
