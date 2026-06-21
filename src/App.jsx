@@ -117,27 +117,19 @@ function Spinner() {
 
 // ── Login screen ──────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
-  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   async function handleSubmit() {
-    setError(""); setSuccess("");
+    setError("");
     if (!email || !password) { setError("Please enter email and password."); return; }
     setLoading(true);
     try {
-      if (mode === "login") {
-        const data = await signIn(email, password);
-        if (data?.access_token) onLogin(data);
-        else setError("Invalid email or password.");
-      } else {
-        await signUp(email, password);
-        setSuccess("Account created! Check your email to confirm, then log in.");
-        setMode("login");
-      }
+      const data = await signIn(email, password);
+      if (data?.access_token) onLogin(data);
+      else setError("Invalid email or password.");
     } catch(e) {
       setError(e.message || "Something went wrong.");
     }
@@ -150,22 +142,16 @@ function LoginScreen({ onLogin }) {
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={C.teal} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom:12 }}>
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
         </svg>
-        <div style={{ fontSize:24,fontWeight:800,color:C.text }}>Seizure Tracker</div>
-        <div style={{ fontSize:13,color:C.muted,marginTop:4 }}>{mode==="login"?"Sign in to continue":"Create your account"}</div>
+        <div style={{ fontSize:24,fontWeight:800,color:C.text }}>Seizures Tracker</div>
+        <div style={{ fontSize:13,color:C.muted,marginTop:4 }}>Sign in to continue</div>
       </div>
-
       <div style={{ width:"100%",maxWidth:380,background:C.surface,borderRadius:20,padding:24,border:`1px solid ${C.border}` }}>
         {error && <div style={{ background:C.redDim,border:`1px solid ${C.red}`,borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:C.red }}>{error}</div>}
-        {success && <div style={{ background:C.tealDim,border:`1px solid ${C.teal}`,borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:C.teal }}>{success}</div>}
         <Field label="Email"><Input type="email" placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)} /></Field>
         <Field label="Password"><Input type="password" placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSubmit()} /></Field>
         <div style={{ marginTop:8 }}>
-          <Btn onClick={handleSubmit} disabled={loading}>{loading ? "Please wait…" : mode==="login" ? "Sign in" : "Create account"}</Btn>
+          <Btn onClick={handleSubmit} disabled={loading}>{loading ? "Please wait…" : "Sign in"}</Btn>
         </div>
-        <button onClick={() => { setMode(m=>m==="login"?"signup":"login"); setError(""); setSuccess(""); }}
-          style={{ marginTop:16,width:"100%",background:"none",border:"none",color:C.muted,fontSize:13,cursor:"pointer" }}>
-          {mode==="login" ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
-        </button>
       </div>
     </div>
   );
@@ -566,7 +552,7 @@ export default function App() {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.teal} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
         </svg>
-        <span style={{ fontSize:14,fontWeight:700,color:C.text }}>Seizure Tracker</span>
+        <span style={{ fontSize:14,fontWeight:700,color:C.text }}>Seizures Tracker</span>
         <button onClick={handleSignOut} style={{ marginLeft:"auto",background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer" }}>Sign out</button>
       </div>
       <div style={{ overflowY:"auto",height:"calc(100vh - 130px)" }}>
