@@ -361,18 +361,20 @@ function TrendsView({ seizures }) {
 }
 
 // ── MedView ───────────────────────────────────────────────────────
-function MedView({ meds, onAdd, onArchive, onRestore, onChangeDose, onUpdatePhoto, onEdit, loading }) {
+function MedView({ meds, onAdd, onArchive, onRestore, onDelete, onChangeDose, onUpdatePhoto, onEdit, loading }) {
   const [showForm,setShowForm]=useState(false);
   const [historyMed,setHistoryMed]=useState(null);
   const [changeDoseMed,setChangeDoseMed]=useState(null);
   const [editMed,setEditMed]=useState(null);
   const [confirmArchive,setConfirmArchive]=useState(null);
+  const [confirmDelete,setConfirmDelete]=useState(null);
   const [showArchived,setShowArchived]=useState(false);
   const [newDose,setNewDose]=useState("");
   const [form,setForm]=useState({name:"",dose:"",schedule:"AM",photo:null});
   const [editForm,setEditForm]=useState({name:"",dose:"",schedule:"AM"});
   const [editHistoryIndex,setEditHistoryIndex]=useState(null);
   const [editHistoryForm,setEditHistoryForm]=useState({dose:"",date:""});
+  const [saving,setSaving]=useState(false);
   const active=meds.filter(m=>!m.archived), archived=meds.filter(m=>m.archived);
   const SCHEDULES=["AM","PM","AM & PM","With meals","As needed"];
   const parseMg=str=>parseFloat(str)||0;
@@ -409,9 +411,11 @@ function MedView({ meds, onAdd, onArchive, onRestore, onChangeDose, onUpdatePhot
     const dh = Array.isArray(m.dose_history) ? m.dose_history : (typeof m.dose_history==="string"?JSON.parse(m.dose_history||"[]"):[]);
     return (
       <div style={{ background:C.card,borderRadius:14,padding:"14px 16px",marginBottom:10,border:`1px solid ${isArchived?C.border+"88":C.border}`,display:"flex",gap:12,alignItems:"flex-start",opacity:isArchived?0.7:1 }}>
-        <div style={{ position:"relative",width:56,height:56,flexShrink:0 }}>
-          {m.photo?<img src={m.photo} alt={m.name} style={{ width:56,height:56,borderRadius:10,objectFit:"cover",border:`1px solid ${C.border}`,display:"block" }}/>:<div style={{ width:56,height:56,borderRadius:10,background:C.surface,border:`1px dashed ${C.border}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2 }}><span style={{ fontSize:18 }}>📷</span><span style={{ fontSize:9,color:C.muted }}>Add</span></div>}
-          {!isArchived&&<input type="file" accept="image/*" onChange={e=>handlePhoto(e,m.id)} style={{ position:"absolute",inset:0,width:"100%",height:"100%",opacity:0,cursor:"pointer",fontSize:0 }}/>}
+        <div style={{ width:56,height:56,flexShrink:0 }}>
+          {m.photo
+            ? <img src={m.photo} alt={m.name} style={{ width:56,height:56,borderRadius:10,objectFit:"cover",border:`1px solid ${C.border}`,display:"block" }}/>
+            : <div style={{ width:56,height:56,borderRadius:10,background:C.surface,border:`1px dashed ${C.border}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2 }}><span style={{ fontSize:18 }}>📷</span><span style={{ fontSize:9,color:C.muted }}>Photo</span></div>
+          }
         </div>
         <div style={{ flex:1,minWidth:0 }}>
           <div style={{ display:"flex",alignItems:"flex-start" }}>
@@ -419,8 +423,7 @@ function MedView({ meds, onAdd, onArchive, onRestore, onChangeDose, onUpdatePhot
               <div style={{ fontWeight:700,color:isArchived?C.muted:C.text,fontSize:15 }}>{m.name}</div>
               <div style={{ fontSize:13,color:C.muted,marginTop:2 }}>{isArchived?<span style={{ fontStyle:"italic" }}>Stopped {m.archived_date?fmtDateDisplay(m.archived_date):""}</span>:`${m.dose} · ${m.schedule}`}</div>
             </div>
-            {isArchived?<button onClick={()=>onRestore(m.id)} style={{ background:"none",border:`1px solid ${C.teal}`,color:C.teal,cursor:"pointer",fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:8 }}>Restore</button>
-              :<button onClick={()=>setConfirmArchive(m)} style={{ background:"none",border:"none",color:C.border,cursor:"pointer",fontSize:18,padding:"0 0 0 4px" }}>×</button>}
+            {isArchived&&<button onClick={()=>onRestore(m.id)} style={{ background:"none",border:`1px solid ${C.teal}`,color:C.teal,cursor:"pointer",fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:8 }}>Restore</button>}
           </div>
           <div style={{ display:"flex",gap:6,marginTop:10 }}>
             {!isArchived&&<button onClick={()=>{ setEditMed(m); setEditForm({name:m.name,dose:m.dose,schedule:m.schedule}); }} style={{ flex:1,background:C.border,border:"none",borderRadius:8,color:C.text,fontSize:11,fontWeight:600,padding:"6px 0",cursor:"pointer" }}>Edit</button>}
@@ -486,11 +489,30 @@ function MedView({ meds, onAdd, onArchive, onRestore, onChangeDose, onUpdatePhot
         <div style={{ background:C.card,borderRadius:10,padding:"12px 14px",marginBottom:20,fontSize:14,color:C.muted }}>Mark <span style={{ color:C.text,fontWeight:700 }}>{confirmArchive.name}</span> as stopped? It will be kept in Past medications with its full history.</div>
         <div style={{ display:"flex",gap:10 }}><Btn variant="ghost" onClick={()=>setConfirmArchive(null)}>Cancel</Btn><Btn variant="danger" onClick={()=>{ onArchive(confirmArchive.id); setConfirmArchive(null); }}>Stop medication</Btn></div>
       </Modal>}
+      {confirmDelete&&<Modal title="Delete medication?" onClose={()=>setConfirmDelete(null)}>
+        <div style={{ background:C.card,borderRadius:10,padding:"12px 14px",marginBottom:20,fontSize:14,color:C.muted }}>Permanently delete <span style={{ color:C.text,fontWeight:700 }}>{confirmDelete.name}</span> and all its history? This cannot be undone.</div>
+        <div style={{ display:"flex",gap:10 }}><Btn variant="ghost" onClick={()=>setConfirmDelete(null)}>Cancel</Btn><Btn variant="danger" onClick={()=>{ onDelete(confirmDelete.id); setConfirmDelete(null); }}>Delete permanently</Btn></div>
+      </Modal>}
       {editMed&&<Modal title={`Edit — ${editMed.name}`} onClose={()=>setEditMed(null)}>
+        <Field label="Photo">
+          <div style={{ display:"flex",alignItems:"center",gap:12 }}>
+            {editMed.photo&&<img src={editMed.photo} alt="preview" style={{ width:64,height:64,borderRadius:10,objectFit:"cover",border:`1px solid ${C.border}`,flexShrink:0 }}/>}
+            <div style={{ position:"relative",display:"inline-block" }}>
+              <div style={{ background:C.card,border:`1px dashed ${C.border}`,borderRadius:10,color:C.muted,fontSize:13,fontWeight:600,padding:"10px 16px",pointerEvents:"none" }}>
+                {editMed.photo?"📷  Change photo":"📷  Upload photo"}
+              </div>
+              <input type="file" accept="image/*" onChange={e=>{ handlePhoto(e,editMed.id); }} style={{ position:"absolute",inset:0,width:"100%",height:"100%",opacity:0,cursor:"pointer",fontSize:0 }}/>
+            </div>
+          </div>
+        </Field>
         <Field label="Medication Name *"><Input value={editForm.name} onChange={e=>setEditForm({...editForm,name:e.target.value})}/></Field>
         <Field label="Dose *"><Input value={editForm.dose} onChange={e=>setEditForm({...editForm,dose:e.target.value})}/></Field>
         <Field label="Schedule"><Select value={editForm.schedule} onChange={e=>setEditForm({...editForm,schedule:e.target.value})} options={SCHEDULES}/></Field>
         <Btn onClick={submitEdit} disabled={saving}>{saving?"Saving…":"Save Changes"}</Btn>
+        <div style={{ display:"flex",gap:10,marginTop:10 }}>
+          <Btn variant="ghost" onClick={()=>{ setConfirmArchive(editMed); setEditMed(null); }}>Stop medication</Btn>
+          <Btn variant="danger" onClick={()=>{ setConfirmDelete(editMed); setEditMed(null); }}>Delete</Btn>
+        </div>
       </Modal>}
       {changeDoseMed&&<Modal title={`Change dose — ${changeDoseMed.name}`} onClose={()=>setChangeDoseMed(null)}>
         <div style={{ background:C.card,borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:C.muted }}>Current dose: <span style={{ color:C.text,fontWeight:700 }}>{changeDoseMed.dose}</span></div>
@@ -535,7 +557,12 @@ function MedView({ meds, onAdd, onArchive, onRestore, onChangeDose, onUpdatePhot
 export default function App() {
   const [session,setSession] = useState(null);
   const [loading,setLoading] = useState(true);
-  const [tab,setTab] = useState("log");
+  const [tab,setTab] = useState(()=>localStorage.getItem("sz_tab")||"log");
+
+  function handleTabChange(id) {
+    localStorage.setItem("sz_tab", id);
+    setTab(id);
+  }
   const [seizures,setSeizures] = useState([]);
   const [meds,setMeds] = useState([]);
   const [loadingSeizures,setLoadingSeizures] = useState(false);
@@ -610,6 +637,10 @@ export default function App() {
     await db.updateMed(token, id, patch);
     setMeds(p=>p.map(m=>m.id===id?{...m,...patch}:m));
   }
+  async function deleteMed(id) {
+    await supaFetch(`/rest/v1/medications?id=eq.${id}`, { method:"DELETE", token });
+    setMeds(p=>p.filter(m=>m.id!==id));
+  }
   async function changeDose(id, newDose, customDh) {
     const med = meds.find(m=>m.id===id);
     const dh = customDh || [...(med.dose_history||[]), {dose:newDose, date:fmtDate(new Date())}];
@@ -648,11 +679,11 @@ export default function App() {
         {tab==="log"&&<LogView seizures={seizures} onAdd={addSeizure} onDelete={deleteSeizure} loading={loadingSeizures}/>}
         {tab==="calendar"&&<CalendarView seizures={seizures}/>}
         {tab==="trends"&&<TrendsView seizures={seizures}/>}
-        {tab==="meds"&&<MedView meds={meds} onAdd={addMed} onArchive={archiveMed} onRestore={restoreMed} onChangeDose={changeDose} onUpdatePhoto={updateMedPhoto} onEdit={updateMed} loading={loadingMeds}/>}
+        {tab==="meds"&&<MedView meds={meds} onAdd={addMed} onArchive={archiveMed} onRestore={restoreMed} onDelete={deleteMed} onChangeDose={changeDose} onUpdatePhoto={updateMedPhoto} onEdit={updateMed} loading={loadingMeds}/>}
       </div>
       <div style={{ position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:420,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",padding:"10px 0 16px" }}>
         {tabs.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,opacity:tab===t.id?1:0.45 }}>
+          <button key={t.id} onClick={()=>handleTabChange(t.id)} style={{ flex:1,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,opacity:tab===t.id?1:0.45 }}>
             <span style={{ fontSize:22 }}>{t.icon}</span>
             <span style={{ fontSize:11,fontWeight:700,color:tab===t.id?C.teal:C.muted }}>{t.label}</span>
           </button>
