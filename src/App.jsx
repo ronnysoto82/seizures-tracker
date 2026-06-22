@@ -292,14 +292,30 @@ function LogView({ seizures, onAdd, onDelete, loading }) {
 }
 
 // ── CalendarView ──────────────────────────────────────────────────
-function CalendarView({ seizures }) {
+function CalendarView({ seizures, onDelete, onEdit }) {
   const [cursor,setCursor] = useState(new Date());
   const [picked,setPicked] = useState(null);
+  const [detail,setDetail] = useState(null);
+  const [editing,setEditing] = useState(false);
+  const [editForm,setEditForm] = useState({});
+  const [saving,setSaving] = useState(false);
   const year=cursor.getFullYear(), month=cursor.getMonth();
   const firstDay=new Date(year,month,1).getDay(), daysInMonth=new Date(year,month+1,0).getDate();
   const todayStr=fmtDate(new Date());
   const seizedDates = useMemo(()=>{ const m={}; seizures.forEach(s=>{ if(!m[s.date])m[s.date]=[]; m[s.date].push(s); }); return m; },[seizures]);
   const cells=[]; for(let i=0;i<firstDay;i++)cells.push(null); for(let i=1;i<=daysInMonth;i++)cells.push(i);
+
+  function openDetail(s) { setDetail(s); setEditing(false); }
+  function openEdit(s) { setEditForm({date:s.date,time:s.time,duration:String(s.duration),activity:s.activity||"Sleeping",notes:s.notes||""}); setEditing(true); }
+  async function submitEdit() {
+    if (!editForm.duration) return;
+    setSaving(true);
+    await onEdit(detail.id, {...editForm, duration:parseDuration(editForm.duration)});
+    setDetail(d=>({...d,...editForm,duration:parseDuration(editForm.duration)}));
+    setSaving(false);
+    setEditing(false);
+  }
+
   return (
     <div style={{ padding:"0 0 80px" }}>
       <div style={{ padding:"20px 20px 12px" }}>
@@ -324,8 +340,52 @@ function CalendarView({ seizures }) {
           );})}
         </div>
       </div>
-      {picked&&seizedDates[picked]&&<div style={{ margin:"16px 16px 0" }}><div style={{ fontSize:13,color:C.muted,marginBottom:8,fontWeight:600 }}>{fmtDateDisplay(picked)} — {seizedDates[picked].length} seizure{seizedDates[picked].length>1?"s":""}</div>{seizedDates[picked].map(s=><div key={s.id} style={{ background:C.card,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between" }}><span style={{ color:C.text,fontWeight:600 }}>{s.activity||"Unknown"}</span><span style={{ color:C.muted,fontSize:13 }}>{s.time} · {s.duration}s</span></div>)}</div>}
+
+      {picked&&seizedDates[picked]&&(
+        <div style={{ margin:"16px 16px 0" }}>
+          <div style={{ fontSize:13,color:C.muted,marginBottom:8,fontWeight:600 }}>{fmtDateDisplay(picked)} — {seizedDates[picked].length} seizure{seizedDates[picked].length>1?"s":""}</div>
+          {seizedDates[picked].map(s=>(
+            <div key={s.id} onClick={()=>openDetail(s)} style={{ background:C.card,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer" }}>
+              <div>
+                <div style={{ fontWeight:600,color:C.text,fontSize:14 }}>{s.activity||"Unknown"}</div>
+                <div style={{ fontSize:12,color:C.muted,marginTop:2 }}>{s.time} · {s.duration}s</div>
+              </div>
+              <div style={{ color:C.border,fontSize:18 }}>›</div>
+            </div>
+          ))}
+        </div>
+      )}
       {picked&&!seizedDates[picked]&&<div style={{ textAlign:"center",color:C.muted,padding:"24px",fontSize:13 }}>No seizures on {fmtDateDisplay(picked)}</div>}
+
+      {/* Detail modal */}
+      {detail&&!editing&&(
+        <Modal title="Seizure Details" onClose={()=>setDetail(null)}>
+          <div style={{ background:C.card,borderRadius:12,padding:16,marginBottom:16 }}>
+            {[["Date",fmtDateDisplay(detail.date)],["Time",detail.time],["Duration",`${detail.duration} seconds`],["Activity",detail.activity||"Not recorded"],...(detail.notes?[["Notes",detail.notes]]:[])].map(([k,v])=>(
+              <div key={k} style={{ display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${C.border}` }}>
+                <span style={{ color:C.muted,fontSize:13 }}>{k}</span>
+                <span style={{ color:C.text,fontSize:13,fontWeight:600 }}>{v}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display:"flex",gap:10 }}>
+            <Btn variant="ghost" onClick={()=>openEdit(detail)}>Edit</Btn>
+            <Btn variant="danger" onClick={()=>{ onDelete(detail.id); setDetail(null); setPicked(null); }}>Delete</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit modal */}
+      {detail&&editing&&(
+        <Modal title="Edit Seizure" onClose={()=>setEditing(false)}>
+          <Field label="Date"><Input type="date" value={editForm.date} onChange={e=>setEditForm({...editForm,date:e.target.value})} /></Field>
+          <Field label="Time"><Input type="time" value={editForm.time} onChange={e=>setEditForm({...editForm,time:e.target.value})} /></Field>
+          <Field label="Duration (seconds) *"><Input type="number" value={editForm.duration} onChange={e=>setEditForm({...editForm,duration:e.target.value})} /></Field>
+          <Field label="Activity *"><Select value={editForm.activity} onChange={e=>setEditForm({...editForm,activity:e.target.value})} options={["Sleeping","Resting","Watching TV","Reading","Eating","Walking","Exercising","Working","Driving","Showering","Unknown"]} /></Field>
+          <Field label="Notes (optional)"><textarea value={editForm.notes} onChange={e=>setEditForm({...editForm,notes:e.target.value})} style={{...inputStyle,height:72,resize:"none",fontFamily:"inherit"}} /></Field>
+          <Btn onClick={submitEdit} disabled={saving}>{saving?"Saving…":"Save Changes"}</Btn>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -623,6 +683,10 @@ export default function App() {
     await db.deleteSeizure(token, id);
     setSeizures(p=>p.filter(s=>s.id!==id));
   }
+  async function editSeizure(id, data) {
+    await supaFetch(`/rest/v1/seizures?id=eq.${id}`, { method:"PATCH", token, body:data });
+    setSeizures(p=>p.map(s=>s.id===id?{...s,...data}:s));
+  }
   async function addMed(data) {
     const rows = await db.addMed(token, userId, data);
     if(rows?.[0]) setMeds(p=>[...p,{...rows[0],dose_history:JSON.parse(rows[0].dose_history||"[]")}]);
@@ -677,7 +741,7 @@ export default function App() {
       </div>
       <div style={{ overflowY:"auto",height:"calc(100vh - 130px)" }}>
         {tab==="log"&&<LogView seizures={seizures} onAdd={addSeizure} onDelete={deleteSeizure} loading={loadingSeizures}/>}
-        {tab==="calendar"&&<CalendarView seizures={seizures}/>}
+        {tab==="calendar"&&<CalendarView seizures={seizures} onDelete={deleteSeizure} onEdit={editSeizure}/>}
         {tab==="trends"&&<TrendsView seizures={seizures}/>}
         {tab==="meds"&&<MedView meds={meds} onAdd={addMed} onArchive={archiveMed} onRestore={restoreMed} onDelete={deleteMed} onChangeDose={changeDose} onUpdatePhoto={updateMedPhoto} onEdit={updateMed} loading={loadingMeds}/>}
       </div>
