@@ -137,7 +137,7 @@ function LoginScreen({ onLogin }) {
   }
 
   return (
-    <div style={{ background:C.bg,minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 24px",fontFamily:"'Inter',system-ui,sans-serif" }}>
+    <div style={{ background:C.bg,minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",paddingTop:"60px",padding:"60px 24px 24px",fontFamily:"'Inter',system-ui,sans-serif" }}>
       <div style={{ marginBottom:32,textAlign:"center" }}>
         <div style={{ display:"flex",justifyContent:"center",marginBottom:16 }}>
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={C.teal} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -364,7 +364,8 @@ function MedView({ meds, onAdd, onArchive, onRestore, onChangeDose, onUpdatePhot
   const [newDose,setNewDose]=useState("");
   const [form,setForm]=useState({name:"",dose:"",schedule:"AM",photo:null});
   const [editForm,setEditForm]=useState({name:"",dose:"",schedule:"AM"});
-  const [saving,setSaving]=useState(false);
+  const [editHistoryIndex,setEditHistoryIndex]=useState(null);
+  const [editHistoryForm,setEditHistoryForm]=useState({dose:"",date:""});
   const active=meds.filter(m=>!m.archived), archived=meds.filter(m=>m.archived);
   const SCHEDULES=["AM","PM","AM & PM","With meals","As needed"];
   const parseMg=str=>parseFloat(str)||0;
@@ -373,6 +374,24 @@ function MedView({ meds, onAdd, onArchive, onRestore, onChangeDose, onUpdatePhot
   async function submit(){ if(!form.name||!form.dose)return; setSaving(true); await onAdd({...form}); setSaving(false); setShowForm(false); setForm({name:"",dose:"",schedule:"AM",photo:null}); }
   async function submitEdit(){ if(!editForm.name||!editForm.dose)return; setSaving(true); await onEdit(editMed.id,editForm); setSaving(false); setEditMed(null); }
   async function submitDoseChange(){ if(!newDose.trim())return; setSaving(true); await onChangeDose(changeDoseMed.id,newDose.trim()); setSaving(false); setChangeDoseMed(null); setNewDose(""); }
+
+  async function submitEditHistory() {
+    if (!editHistoryForm.dose.trim() || !editHistoryForm.date) return;
+    setSaving(true);
+    const dh = historyMed.dose_history.map((e,i) => i===editHistoryIndex ? {dose:editHistoryForm.dose.trim(), date:editHistoryForm.date} : e);
+    await onChangeDose(historyMed.id, historyMed.dose, dh);
+    setHistoryMed(m => ({...m, dose_history:dh}));
+    setEditHistoryIndex(null);
+    setSaving(false);
+  }
+
+  async function deleteHistoryEntry(index) {
+    setSaving(true);
+    const dh = historyMed.dose_history.filter((_,i) => i!==index);
+    await onChangeDose(historyMed.id, dh.length ? dh[dh.length-1].dose : historyMed.dose, dh);
+    setHistoryMed(m => ({...m, dose_history:dh}));
+    setSaving(false);
+  }
   function handlePhoto(e,medId){ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=ev=>onUpdatePhoto(medId,ev.target.result); r.readAsDataURL(f); }
   function handleFormPhoto(e){ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=ev=>setForm(x=>({...x,photo:ev.target.result})); r.readAsDataURL(f); }
 
@@ -471,12 +490,33 @@ function MedView({ meds, onAdd, onArchive, onRestore, onChangeDose, onUpdatePhot
         <Field label="New Dose *"><Input placeholder="e.g. 750mg" value={newDose} onChange={e=>setNewDose(e.target.value)}/></Field>
         <Btn onClick={submitDoseChange} disabled={saving}>{saving?"Saving…":"Save Change"}</Btn>
       </Modal>}
-      {historyMed&&<Modal title={`Dose history — ${historyMed.name}`} onClose={()=>setHistoryMed(null)}>
-        {(!historyMed.dose_history||historyMed.dose_history.length===0)?<div style={{ textAlign:"center",color:C.muted,padding:"24px 0" }}>No history yet.</div>
-          :historyMed.dose_history.map((entry,i)=>{ const prev=historyMed.dose_history[i-1]; const tag=prev?doseTag(prev.dose,entry.dose):null; return (
-            <div key={i} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.border}` }}>
-              <div><div style={{ fontWeight:700,color:C.text,fontSize:15 }}>{entry.dose}</div><div style={{ fontSize:12,color:C.muted,marginTop:2 }}>{fmtDateDisplay(entry.date)}</div></div>
-              {tag&&<span style={{ fontSize:11,fontWeight:700,color:tag.color,background:tag.color+"22",borderRadius:99,padding:"3px 10px" }}>{tag.label}</span>}
+      {historyMed&&<Modal title={`Dose history — ${historyMed.name}`} onClose={()=>{ setHistoryMed(null); setEditHistoryIndex(null); }}>
+        {(!historyMed.dose_history||historyMed.dose_history.length===0)
+          ? <div style={{ textAlign:"center",color:C.muted,padding:"24px 0" }}>No history yet.</div>
+          : historyMed.dose_history.map((entry,i)=>{ const prev=historyMed.dose_history[i-1]; const tag=prev?doseTag(prev.dose,entry.dose):null; const isEditing=editHistoryIndex===i; return (
+            <div key={i} style={{ padding:"12px 0",borderBottom:`1px solid ${C.border}` }}>
+              {isEditing ? (
+                <div>
+                  <Field label="Dose"><Input value={editHistoryForm.dose} onChange={e=>setEditHistoryForm(f=>({...f,dose:e.target.value}))} /></Field>
+                  <Field label="Date"><Input type="date" value={editHistoryForm.date} onChange={e=>setEditHistoryForm(f=>({...f,date:e.target.value}))} /></Field>
+                  <div style={{ display:"flex",gap:8,marginTop:4 }}>
+                    <Btn variant="ghost" onClick={()=>setEditHistoryIndex(null)}>Cancel</Btn>
+                    <Btn onClick={submitEditHistory} disabled={saving}>{saving?"Saving…":"Save"}</Btn>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+                  <div>
+                    <div style={{ fontWeight:700,color:C.text,fontSize:15 }}>{entry.dose}</div>
+                    <div style={{ fontSize:12,color:C.muted,marginTop:2 }}>{fmtDateDisplay(entry.date)}</div>
+                  </div>
+                  <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                    {tag&&<span style={{ fontSize:11,fontWeight:700,color:tag.color,background:tag.color+"22",borderRadius:99,padding:"3px 10px" }}>{tag.label}</span>}
+                    <button onClick={()=>{ setEditHistoryIndex(i); setEditHistoryForm({dose:entry.dose,date:entry.date}); }} style={{ background:C.border,border:"none",borderRadius:8,color:C.text,fontSize:11,fontWeight:600,padding:"4px 10px",cursor:"pointer" }}>Edit</button>
+                    <button onClick={()=>deleteHistoryEntry(i)} style={{ background:"none",border:"none",color:C.border,fontSize:18,cursor:"pointer",padding:"0 2px" }}>×</button>
+                  </div>
+                </div>
+              )}
             </div>
           );})}
       </Modal>}
@@ -527,9 +567,9 @@ export default function App() {
     await db.updateMed(token, id, patch);
     setMeds(p=>p.map(m=>m.id===id?{...m,...patch}:m));
   }
-  async function changeDose(id, newDose) {
+  async function changeDose(id, newDose, customDh) {
     const med = meds.find(m=>m.id===id);
-    const dh = [...(med.dose_history||[]), {dose:newDose, date:fmtDate(new Date())}];
+    const dh = customDh || [...(med.dose_history||[]), {dose:newDose, date:fmtDate(new Date())}];
     await db.updateMed(token, id, {dose:newDose, dose_history:JSON.stringify(dh)});
     setMeds(p=>p.map(m=>m.id===id?{...m,dose:newDose,dose_history:dh}:m));
   }
