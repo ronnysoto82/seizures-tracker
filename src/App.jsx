@@ -38,6 +38,13 @@ async function signOut(token) {
   return supaFetch("/auth/v1/logout", { method:"POST", token });
 }
 
+async function refreshSession(refreshToken) {
+  return supaFetch("/auth/v1/token?grant_type=refresh_token", {
+    method: "POST",
+    body: { refresh_token: refreshToken },
+  });
+}
+
 // DB helpers
 const db = {
   async getSeizures(token) {
@@ -527,11 +534,47 @@ function MedView({ meds, onAdd, onArchive, onRestore, onChangeDose, onUpdatePhot
 // ── App ───────────────────────────────────────────────────────────
 export default function App() {
   const [session,setSession] = useState(null);
+  const [loading,setLoading] = useState(true);
   const [tab,setTab] = useState("log");
   const [seizures,setSeizures] = useState([]);
   const [meds,setMeds] = useState([]);
   const [loadingSeizures,setLoadingSeizures] = useState(false);
   const [loadingMeds,setLoadingMeds] = useState(false);
+
+  // Restore session from localStorage on mount
+  useEffect(()=>{
+    async function restoreSession() {
+      try {
+        const stored = localStorage.getItem("sz_session");
+        if (!stored) { setLoading(false); return; }
+        const parsed = JSON.parse(stored);
+        // Check if access token is still valid (expires_at is in seconds)
+        if (parsed.expires_at && Date.now()/1000 < parsed.expires_at - 60) {
+          setSession(parsed);
+        } else if (parsed.refresh_token) {
+          // Try to refresh
+          const data = await refreshSession(parsed.refresh_token);
+          if (data?.access_token) {
+            const newSession = {...data, expires_at: Date.now()/1000 + data.expires_in};
+            localStorage.setItem("sz_session", JSON.stringify(newSession));
+            setSession(newSession);
+          } else {
+            localStorage.removeItem("sz_session");
+          }
+        }
+      } catch(e) {
+        localStorage.removeItem("sz_session");
+      }
+      setLoading(false);
+    }
+    restoreSession();
+  },[]);
+
+  function handleLogin(data) {
+    const sess = {...data, expires_at: Date.now()/1000 + (data.expires_in || 3600)};
+    localStorage.setItem("sz_session", JSON.stringify(sess));
+    setSession(sess);
+  }
 
   const token = session?.access_token;
   const userId = session?.user?.id;
@@ -583,10 +626,12 @@ export default function App() {
   }
   async function handleSignOut() {
     await signOut(token).catch(()=>{});
+    localStorage.removeItem("sz_session");
     setSession(null); setSeizures([]); setMeds([]);
   }
 
-  if(!session) return <LoginScreen onLogin={setSession} />;
+  if(loading) return <div style={{ background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center" }}><Spinner/></div>;
+  if(!session) return <LoginScreen onLogin={handleLogin} />;
 
   const tabs=[{id:"log",icon:"📋",label:"Log"},{id:"calendar",icon:"📅",label:"Calendar"},{id:"trends",icon:"📈",label:"Trends"},{id:"meds",icon:"💊",label:"Meds"}];
 
