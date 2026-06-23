@@ -218,14 +218,66 @@ function StatsBar({ seizures }) {
   );
 }
 
+// ── ActivitySelect ────────────────────────────────────────────────
+// Dropdown with inline manage mode to add/remove activities
+function ActivitySelect({ value, onChange, activities, onSaveActivities }) {
+  const [managing, setManaging] = useState(false);
+  const [newVal, setNewVal] = useState("");
+
+  function addActivity() {
+    const t = newVal.trim();
+    if (!t || activities.includes(t)) return;
+    onSaveActivities([...activities, t]);
+    setNewVal("");
+  }
+
+  function removeActivity(a) {
+    const list = activities.filter(x => x !== a);
+    onSaveActivities(list);
+    if (value === a && list.length) onChange(list[0]);
+  }
+
+  if (managing) {
+    return (
+      <div style={{ background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px" }}>
+        <div style={{ display:"flex",gap:8,marginBottom:10 }}>
+          <input value={newVal} onChange={e=>setNewVal(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&addActivity()}
+            placeholder="New activity…"
+            style={{...inputStyle,flex:1,padding:"7px 10px"}} />
+          <button onClick={addActivity} style={{ background:C.teal,border:"none",borderRadius:8,color:"#0F1623",fontWeight:700,fontSize:18,width:38,cursor:"pointer",flexShrink:0 }}>+</button>
+        </div>
+        {activities.map(a=>(
+          <div key={a} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}` }}>
+            <span style={{ fontSize:13,color:C.text }}>{a}</span>
+            <button onClick={()=>removeActivity(a)} style={{ background:"none",border:"none",color:C.muted,fontSize:16,cursor:"pointer",padding:"0 4px" }}>×</button>
+          </div>
+        ))}
+        <button onClick={()=>setManaging(false)} style={{ marginTop:10,width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:8,color:C.teal,fontSize:12,fontWeight:600,padding:"7px",cursor:"pointer" }}>Done</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display:"flex",gap:8 }}>
+      <select value={value} onChange={e=>onChange(e.target.value)} style={{...inputStyle,flex:1,appearance:"none"}}>
+        {activities.map(o=><option key={o}>{o}</option>)}
+      </select>
+      <button onClick={()=>setManaging(true)} style={{ background:C.card,border:`1px solid ${C.border}`,borderRadius:10,color:C.muted,fontSize:12,fontWeight:600,padding:"0 12px",cursor:"pointer",flexShrink:0,whiteSpace:"nowrap" }}>Edit</button>
+    </div>
+  );
+}
+
 // ── LogView ───────────────────────────────────────────────────────
-function LogView({ seizures, onAdd, onDelete, loading, activities }) {
+function LogView({ seizures, onAdd, onDelete, onEdit, loading, activities, onSaveActivities }) {
   const now = new Date();
   const [showForm, setShowForm] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({});
   const [toast, setToast] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ date:fmtDate(now), time:fmtTime(now), duration:"", activity:"Sleeping", notes:"" });
+  const [form, setForm] = useState({ date:fmtDate(now), time:fmtTime(now), duration:"", activity:activities[0]||"Sleeping", notes:"" });
   const sorted = [...seizures].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
 
   async function submit() {
@@ -234,9 +286,23 @@ function LogView({ seizures, onAdd, onDelete, loading, activities }) {
     await onAdd({...form, duration:parseDuration(form.duration)});
     setSaving(false);
     setShowForm(false);
-    setForm({ date:fmtDate(new Date()), time:fmtTime(new Date()), duration:"", activity:"Sleeping", notes:"" });
+    setForm({ date:fmtDate(new Date()), time:fmtTime(new Date()), duration:"", activity:activities[0]||"Sleeping", notes:"" });
     setToast(true);
     setTimeout(()=>setToast(false),3000);
+  }
+
+  function openEdit(s) {
+    setEditForm({ date:s.date, time:s.time, duration:String(s.duration), activity:s.activity||activities[0], notes:s.notes||"" });
+    setEditing(true);
+  }
+
+  async function submitEdit() {
+    if (!editForm.duration) return;
+    setSaving(true);
+    await onEdit(detail.id, {...editForm, duration:parseDuration(editForm.duration)});
+    setDetail(d=>({...d,...editForm,duration:parseDuration(editForm.duration)}));
+    setSaving(false);
+    setEditing(false);
   }
 
   return (
@@ -252,7 +318,7 @@ function LogView({ seizures, onAdd, onDelete, loading, activities }) {
         ? <div style={{ textAlign:"center",color:C.muted,padding:"40px 20px" }}><div style={{ fontSize:40,marginBottom:12 }}>📋</div><div>No seizures recorded yet.</div></div>
         : <div style={{ padding:"0 16px" }}>
             {sorted.map(s=>(
-              <div key={s.id} onClick={()=>setDetail(s)} style={{ background:C.card,borderRadius:14,padding:"14px 16px",marginBottom:10,cursor:"pointer",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:14 }}>
+              <div key={s.id} onClick={()=>{ setDetail(s); setEditing(false); }} style={{ background:C.card,borderRadius:14,padding:"14px 16px",marginBottom:10,cursor:"pointer",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:14 }}>
                 <div style={{ background:C.redDim,borderRadius:10,padding:"8px 10px",minWidth:56,textAlign:"center" }}>
                   <div style={{ fontSize:11,color:C.red,fontWeight:700 }}>{fmtDateDisplay(s.date)}</div>
                   <div style={{ fontSize:13,color:C.red,fontWeight:800 }}>{s.time}</div>
@@ -266,17 +332,23 @@ function LogView({ seizures, onAdd, onDelete, loading, activities }) {
             ))}
           </div>
       }
+
+      {/* Add modal */}
       {showForm && (
         <Modal title="Log Seizure" onClose={()=>setShowForm(false)}>
           <Field label="Date"><Input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} /></Field>
           <Field label="Time"><Input type="time" value={form.time} onChange={e=>setForm({...form,time:e.target.value})} /></Field>
           <Field label="Duration (seconds) *"><Input type="number" placeholder="e.g. 45" value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})} /></Field>
-          <Field label="Activity *"><Select value={form.activity} onChange={e=>setForm({...form,activity:e.target.value})} options={activities} /></Field>
+          <Field label="Activity *">
+            <ActivitySelect value={form.activity} onChange={v=>setForm({...form,activity:v})} activities={activities} onSaveActivities={onSaveActivities} />
+          </Field>
           <Field label="Notes (optional)"><textarea value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} style={{...inputStyle,height:72,resize:"none",fontFamily:"inherit"}} placeholder="Triggers, postictal state, etc." /></Field>
           <Btn onClick={submit} disabled={saving}>{saving?"Saving…":"Save Seizure"}</Btn>
         </Modal>
       )}
-      {detail && (
+
+      {/* Detail modal */}
+      {detail && !editing && (
         <Modal title="Seizure Details" onClose={()=>setDetail(null)}>
           <div style={{ background:C.card,borderRadius:12,padding:16,marginBottom:16 }}>
             {[["Date",fmtDateDisplay(detail.date)],["Time",detail.time],["Duration",`${detail.duration} seconds`],["Activity",detail.activity||"Not recorded"],...(detail.notes?[["Notes",detail.notes]]:[])].map(([k,v])=>(
@@ -286,7 +358,24 @@ function LogView({ seizures, onAdd, onDelete, loading, activities }) {
               </div>
             ))}
           </div>
-          <Btn variant="danger" onClick={()=>{ onDelete(detail.id); setDetail(null); }}>Delete Record</Btn>
+          <div style={{ display:"flex",gap:10 }}>
+            <Btn variant="ghost" onClick={()=>openEdit(detail)}>Edit</Btn>
+            <Btn variant="danger" onClick={()=>{ onDelete(detail.id); setDetail(null); }}>Delete</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit modal */}
+      {detail && editing && (
+        <Modal title="Edit Seizure" onClose={()=>setEditing(false)}>
+          <Field label="Date"><Input type="date" value={editForm.date} onChange={e=>setEditForm({...editForm,date:e.target.value})} /></Field>
+          <Field label="Time"><Input type="time" value={editForm.time} onChange={e=>setEditForm({...editForm,time:e.target.value})} /></Field>
+          <Field label="Duration (seconds) *"><Input type="number" value={editForm.duration} onChange={e=>setEditForm({...editForm,duration:e.target.value})} /></Field>
+          <Field label="Activity *">
+            <ActivitySelect value={editForm.activity} onChange={v=>setEditForm({...editForm,activity:v})} activities={activities} onSaveActivities={onSaveActivities} />
+          </Field>
+          <Field label="Notes (optional)"><textarea value={editForm.notes} onChange={e=>setEditForm({...editForm,notes:e.target.value})} style={{...inputStyle,height:72,resize:"none",fontFamily:"inherit"}} /></Field>
+          <Btn onClick={submitEdit} disabled={saving}>{saving?"Saving…":"Save Changes"}</Btn>
         </Modal>
       )}
     </div>
@@ -294,7 +383,7 @@ function LogView({ seizures, onAdd, onDelete, loading, activities }) {
 }
 
 // ── CalendarView ──────────────────────────────────────────────────
-function CalendarView({ seizures, onDelete, onEdit, activities }) {
+function CalendarView({ seizures, onDelete, onEdit, activities, onSaveActivities }) {
   const [cursor,setCursor] = useState(new Date());
   const [picked,setPicked] = useState(null);
   const [detail,setDetail] = useState(null);
@@ -383,7 +472,9 @@ function CalendarView({ seizures, onDelete, onEdit, activities }) {
           <Field label="Date"><Input type="date" value={editForm.date} onChange={e=>setEditForm({...editForm,date:e.target.value})} /></Field>
           <Field label="Time"><Input type="time" value={editForm.time} onChange={e=>setEditForm({...editForm,time:e.target.value})} /></Field>
           <Field label="Duration (seconds) *"><Input type="number" value={editForm.duration} onChange={e=>setEditForm({...editForm,duration:e.target.value})} /></Field>
-          <Field label="Activity *"><Select value={editForm.activity} onChange={e=>setEditForm({...editForm,activity:e.target.value})} options={activities} /></Field>
+          <Field label="Activity *">
+            <ActivitySelect value={editForm.activity} onChange={v=>setEditForm({...editForm,activity:v})} activities={activities} onSaveActivities={onSaveActivities} />
+          </Field>
           <Field label="Notes (optional)"><textarea value={editForm.notes} onChange={e=>setEditForm({...editForm,notes:e.target.value})} style={{...inputStyle,height:72,resize:"none",fontFamily:"inherit"}} /></Field>
           <Btn onClick={submitEdit} disabled={saving}>{saving?"Saving…":"Save Changes"}</Btn>
         </Modal>
@@ -813,7 +904,7 @@ export default function App() {
   if(loading) return <div style={{ background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center" }}><Spinner/></div>;
   if(!session) return <LoginScreen onLogin={handleLogin} />;
 
-  const tabs=[{id:"log",icon:"📋",label:"Log"},{id:"calendar",icon:"📅",label:"Calendar"},{id:"trends",icon:"📈",label:"Trends"},{id:"meds",icon:"💊",label:"Meds"},{id:"settings",icon:"⚙️",label:"Settings"}];
+  const tabs=[{id:"log",icon:"📋",label:"Log"},{id:"calendar",icon:"📅",label:"Calendar"},{id:"trends",icon:"📈",label:"Trends"},{id:"meds",icon:"💊",label:"Meds"}];
 
   return (
     <div style={{ background:C.bg,minHeight:"100vh",maxWidth:420,margin:"0 auto",fontFamily:"'Inter',system-ui,sans-serif",color:C.text }}>
@@ -822,13 +913,13 @@ export default function App() {
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
         </svg>
         <span style={{ fontSize:14,fontWeight:700,color:C.text }}>Seizures Tracker</span>
+        <button onClick={handleSignOut} style={{ marginLeft:"auto",background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer" }}>Sign out</button>
       </div>
       <div style={{ overflowY:"auto",height:"calc(100vh - 130px)" }}>
-        {tab==="log"&&<LogView seizures={seizures} onAdd={addSeizure} onDelete={deleteSeizure} loading={loadingSeizures} activities={activities}/>}
-        {tab==="calendar"&&<CalendarView seizures={seizures} onDelete={deleteSeizure} onEdit={editSeizure} activities={activities}/>}
+        {tab==="log"&&<LogView seizures={seizures} onAdd={addSeizure} onDelete={deleteSeizure} onEdit={editSeizure} loading={loadingSeizures} activities={activities} onSaveActivities={saveActivities}/>}
+        {tab==="calendar"&&<CalendarView seizures={seizures} onDelete={deleteSeizure} onEdit={editSeizure} activities={activities} onSaveActivities={saveActivities}/>}
         {tab==="trends"&&<TrendsView seizures={seizures}/>}
         {tab==="meds"&&<MedView meds={meds} onAdd={addMed} onArchive={archiveMed} onRestore={restoreMed} onDelete={deleteMed} onChangeDose={changeDose} onUpdatePhoto={updateMedPhoto} onEdit={updateMed} loading={loadingMeds}/>}
-        {tab==="settings"&&<SettingsView activities={activities} onSaveActivities={saveActivities} onSignOut={handleSignOut}/>}
       </div>
       <div style={{ position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:420,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",padding:"10px 0 16px" }}>
         {tabs.map(t=>(
