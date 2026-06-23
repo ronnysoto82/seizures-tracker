@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 
+const DEFAULT_ACTIVITIES = ["Sleeping","Resting","Watching TV","Reading","Eating","Walking","Exercising","Working","Driving","Showering","Unknown"];
+
 // ── Supabase client (CDN, no npm needed) ──────────────────────────
 const SUPA_URL = "https://xmvuoksikudkpjhoykvo.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhtdnVva3Npa3Vka3BqaG95a3ZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNjM0OTMsImV4cCI6MjA5NzYzOTQ5M30.hZZfpbkTNVx4Y4NON82vyGH9xXYFbyD8RCsqSPZVyQA";
@@ -217,7 +219,7 @@ function StatsBar({ seizures }) {
 }
 
 // ── LogView ───────────────────────────────────────────────────────
-function LogView({ seizures, onAdd, onDelete, loading }) {
+function LogView({ seizures, onAdd, onDelete, loading, activities }) {
   const now = new Date();
   const [showForm, setShowForm] = useState(false);
   const [detail, setDetail] = useState(null);
@@ -269,7 +271,7 @@ function LogView({ seizures, onAdd, onDelete, loading }) {
           <Field label="Date"><Input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} /></Field>
           <Field label="Time"><Input type="time" value={form.time} onChange={e=>setForm({...form,time:e.target.value})} /></Field>
           <Field label="Duration (seconds) *"><Input type="number" placeholder="e.g. 45" value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})} /></Field>
-          <Field label="Activity *"><Select value={form.activity} onChange={e=>setForm({...form,activity:e.target.value})} options={["Sleeping","Resting","Watching TV","Reading","Eating","Walking","Exercising","Working","Driving","Showering","Unknown"]} /></Field>
+          <Field label="Activity *"><Select value={form.activity} onChange={e=>setForm({...form,activity:e.target.value})} options={activities} /></Field>
           <Field label="Notes (optional)"><textarea value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} style={{...inputStyle,height:72,resize:"none",fontFamily:"inherit"}} placeholder="Triggers, postictal state, etc." /></Field>
           <Btn onClick={submit} disabled={saving}>{saving?"Saving…":"Save Seizure"}</Btn>
         </Modal>
@@ -292,7 +294,7 @@ function LogView({ seizures, onAdd, onDelete, loading }) {
 }
 
 // ── CalendarView ──────────────────────────────────────────────────
-function CalendarView({ seizures, onDelete, onEdit }) {
+function CalendarView({ seizures, onDelete, onEdit, activities }) {
   const [cursor,setCursor] = useState(new Date());
   const [picked,setPicked] = useState(null);
   const [detail,setDetail] = useState(null);
@@ -381,7 +383,7 @@ function CalendarView({ seizures, onDelete, onEdit }) {
           <Field label="Date"><Input type="date" value={editForm.date} onChange={e=>setEditForm({...editForm,date:e.target.value})} /></Field>
           <Field label="Time"><Input type="time" value={editForm.time} onChange={e=>setEditForm({...editForm,time:e.target.value})} /></Field>
           <Field label="Duration (seconds) *"><Input type="number" value={editForm.duration} onChange={e=>setEditForm({...editForm,duration:e.target.value})} /></Field>
-          <Field label="Activity *"><Select value={editForm.activity} onChange={e=>setEditForm({...editForm,activity:e.target.value})} options={["Sleeping","Resting","Watching TV","Reading","Eating","Walking","Exercising","Working","Driving","Showering","Unknown"]} /></Field>
+          <Field label="Activity *"><Select value={editForm.activity} onChange={e=>setEditForm({...editForm,activity:e.target.value})} options={activities} /></Field>
           <Field label="Notes (optional)"><textarea value={editForm.notes} onChange={e=>setEditForm({...editForm,notes:e.target.value})} style={{...inputStyle,height:72,resize:"none",fontFamily:"inherit"}} /></Field>
           <Btn onClick={submitEdit} disabled={saving}>{saving?"Saving…":"Save Changes"}</Btn>
         </Modal>
@@ -613,11 +615,94 @@ function MedView({ meds, onAdd, onArchive, onRestore, onDelete, onChangeDose, on
   );
 }
 
+// ── SettingsView ──────────────────────────────────────────────────
+function SettingsView({ activities, onSaveActivities, onSignOut }) {
+  const [newActivity, setNewActivity] = useState("");
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  function addActivity() {
+    const trimmed = newActivity.trim();
+    if (!trimmed || activities.includes(trimmed)) return;
+    onSaveActivities([...activities, trimmed]);
+    setNewActivity("");
+  }
+
+  function removeActivity(a) {
+    onSaveActivities(activities.filter(x => x !== a));
+  }
+
+  function resetActivities() {
+    onSaveActivities(DEFAULT_ACTIVITIES);
+    setConfirmReset(false);
+  }
+
+  return (
+    <div style={{ padding:"0 0 80px" }}>
+      <div style={{ padding:"20px 20px 12px" }}>
+        <div style={{ fontSize:22,fontWeight:800,color:C.text }}>Settings</div>
+      </div>
+
+      {/* Activities */}
+      <div style={{ margin:"0 16px 16px",background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}` }}>
+        <div style={{ fontSize:11,color:C.muted,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",marginBottom:14 }}>Activities</div>
+
+        {/* Add new */}
+        <div style={{ display:"flex",gap:8,marginBottom:14 }}>
+          <input value={newActivity} onChange={e=>setNewActivity(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&addActivity()}
+            placeholder="Add activity…"
+            style={{...inputStyle,flex:1}} />
+          <button onClick={addActivity} style={{ background:C.teal,border:"none",borderRadius:10,color:"#0F1623",fontWeight:700,fontSize:18,width:44,cursor:"pointer",flexShrink:0 }}>+</button>
+        </div>
+
+        {/* List */}
+        {activities.map(a=>(
+          <div key={a} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 0",borderBottom:`1px solid ${C.border}` }}>
+            <span style={{ fontSize:14,color:C.text }}>{a}</span>
+            <button onClick={()=>removeActivity(a)} style={{ background:"none",border:"none",color:C.muted,fontSize:18,cursor:"pointer",padding:"0 4px" }}>×</button>
+          </div>
+        ))}
+
+        <button onClick={()=>setConfirmReset(true)} style={{ marginTop:14,background:"none",border:`1px solid ${C.border}`,borderRadius:10,color:C.muted,fontSize:12,padding:"8px 14px",cursor:"pointer",width:"100%" }}>
+          Reset to defaults
+        </button>
+      </div>
+
+      {/* Sign out */}
+      <div style={{ margin:"0 16px" }}>
+        <button onClick={onSignOut} style={{ width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:12,color:C.red,fontWeight:700,fontSize:15,padding:"13px",cursor:"pointer" }}>
+          Sign out
+        </button>
+      </div>
+
+      {confirmReset&&(
+        <Modal title="Reset activities?" onClose={()=>setConfirmReset(false)}>
+          <div style={{ background:C.card,borderRadius:10,padding:"12px 14px",marginBottom:20,fontSize:14,color:C.muted }}>
+            This will restore the default activity list. Any custom activities will be removed.
+          </div>
+          <div style={{ display:"flex",gap:10 }}>
+            <Btn variant="ghost" onClick={()=>setConfirmReset(false)}>Cancel</Btn>
+            <Btn variant="danger" onClick={resetActivities}>Reset</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────
 export default function App() {
   const [session,setSession] = useState(null);
   const [loading,setLoading] = useState(true);
   const [tab,setTab] = useState(()=>localStorage.getItem("sz_tab")||"log");
+  const [activities, setActivities] = useState(()=>{
+    try { const s=localStorage.getItem("sz_activities"); return s?JSON.parse(s):DEFAULT_ACTIVITIES; } catch{ return DEFAULT_ACTIVITIES; }
+  });
+
+  function saveActivities(list) {
+    localStorage.setItem("sz_activities", JSON.stringify(list));
+    setActivities(list);
+  }
 
   function handleTabChange(id) {
     localStorage.setItem("sz_tab", id);
@@ -728,7 +813,7 @@ export default function App() {
   if(loading) return <div style={{ background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center" }}><Spinner/></div>;
   if(!session) return <LoginScreen onLogin={handleLogin} />;
 
-  const tabs=[{id:"log",icon:"📋",label:"Log"},{id:"calendar",icon:"📅",label:"Calendar"},{id:"trends",icon:"📈",label:"Trends"},{id:"meds",icon:"💊",label:"Meds"}];
+  const tabs=[{id:"log",icon:"📋",label:"Log"},{id:"calendar",icon:"📅",label:"Calendar"},{id:"trends",icon:"📈",label:"Trends"},{id:"meds",icon:"💊",label:"Meds"},{id:"settings",icon:"⚙️",label:"Settings"}];
 
   return (
     <div style={{ background:C.bg,minHeight:"100vh",maxWidth:420,margin:"0 auto",fontFamily:"'Inter',system-ui,sans-serif",color:C.text }}>
@@ -737,13 +822,13 @@ export default function App() {
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
         </svg>
         <span style={{ fontSize:14,fontWeight:700,color:C.text }}>Seizures Tracker</span>
-        <button onClick={handleSignOut} style={{ marginLeft:"auto",background:"none",border:"none",color:C.muted,fontSize:12,cursor:"pointer" }}>Sign out</button>
       </div>
       <div style={{ overflowY:"auto",height:"calc(100vh - 130px)" }}>
-        {tab==="log"&&<LogView seizures={seizures} onAdd={addSeizure} onDelete={deleteSeizure} loading={loadingSeizures}/>}
-        {tab==="calendar"&&<CalendarView seizures={seizures} onDelete={deleteSeizure} onEdit={editSeizure}/>}
+        {tab==="log"&&<LogView seizures={seizures} onAdd={addSeizure} onDelete={deleteSeizure} loading={loadingSeizures} activities={activities}/>}
+        {tab==="calendar"&&<CalendarView seizures={seizures} onDelete={deleteSeizure} onEdit={editSeizure} activities={activities}/>}
         {tab==="trends"&&<TrendsView seizures={seizures}/>}
         {tab==="meds"&&<MedView meds={meds} onAdd={addMed} onArchive={archiveMed} onRestore={restoreMed} onDelete={deleteMed} onChangeDose={changeDose} onUpdatePhoto={updateMedPhoto} onEdit={updateMed} loading={loadingMeds}/>}
+        {tab==="settings"&&<SettingsView activities={activities} onSaveActivities={saveActivities} onSignOut={handleSignOut}/>}
       </div>
       <div style={{ position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:420,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",padding:"10px 0 16px" }}>
         {tabs.map(t=>(
