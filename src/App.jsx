@@ -223,6 +223,7 @@ function StatsBar({ seizures }) {
 function ActivitySelect({ value, onChange, activities, onSaveActivities }) {
   const [managing, setManaging] = useState(false);
   const [newVal, setNewVal] = useState("");
+  const [confirmRemove, setConfirmRemove] = useState(null);
 
   function addActivity() {
     const t = newVal.trim();
@@ -235,6 +236,7 @@ function ActivitySelect({ value, onChange, activities, onSaveActivities }) {
     const list = activities.filter(x => x !== a);
     onSaveActivities(list);
     if (value === a && list.length) onChange(list[0]);
+    setConfirmRemove(null);
   }
 
   if (managing) {
@@ -250,10 +252,17 @@ function ActivitySelect({ value, onChange, activities, onSaveActivities }) {
         {activities.map(a=>(
           <div key={a} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}` }}>
             <span style={{ fontSize:13,color:C.text }}>{a}</span>
-            <button onClick={()=>removeActivity(a)} style={{ background:"none",border:"none",color:C.muted,fontSize:16,cursor:"pointer",padding:"0 4px" }}>×</button>
+            {confirmRemove===a
+              ? <div style={{ display:"flex",gap:6,alignItems:"center" }}>
+                  <span style={{ fontSize:11,color:C.muted }}>Remove?</span>
+                  <button onClick={()=>removeActivity(a)} style={{ background:C.red,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,padding:"3px 8px",cursor:"pointer" }}>Yes</button>
+                  <button onClick={()=>setConfirmRemove(null)} style={{ background:C.border,border:"none",borderRadius:6,color:C.text,fontSize:11,fontWeight:700,padding:"3px 8px",cursor:"pointer" }}>No</button>
+                </div>
+              : <button onClick={()=>setConfirmRemove(a)} style={{ background:"none",border:"none",color:C.muted,fontSize:16,cursor:"pointer",padding:"0 4px" }}>×</button>
+            }
           </div>
         ))}
-        <button onClick={()=>setManaging(false)} style={{ marginTop:10,width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:8,color:C.teal,fontSize:12,fontWeight:600,padding:"7px",cursor:"pointer" }}>Done</button>
+        <button onClick={()=>{ setManaging(false); setConfirmRemove(null); }} style={{ marginTop:10,width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:8,color:C.teal,fontSize:12,fontWeight:600,padding:"7px",cursor:"pointer" }}>Done</button>
       </div>
     );
   }
@@ -274,6 +283,7 @@ function LogView({ seizures, onAdd, onDelete, onEdit, loading, activities, onSav
   const [showForm, setShowForm] = useState(false);
   const [detail, setDetail] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [toast, setToast] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -360,7 +370,20 @@ function LogView({ seizures, onAdd, onDelete, onEdit, loading, activities, onSav
           </div>
           <div style={{ display:"flex",gap:10 }}>
             <Btn variant="ghost" onClick={()=>openEdit(detail)}>Edit</Btn>
-            <Btn variant="danger" onClick={()=>{ onDelete(detail.id); setDetail(null); }}>Delete</Btn>
+            <Btn variant="danger" onClick={()=>setConfirmDelete(detail)}>Delete</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Confirm delete seizure */}
+      {confirmDelete && (
+        <Modal title="Delete seizure?" onClose={()=>setConfirmDelete(null)}>
+          <div style={{ background:C.card,borderRadius:10,padding:"12px 14px",marginBottom:20,fontSize:14,color:C.muted }}>
+            Delete the seizure recorded on <span style={{ color:C.text,fontWeight:700 }}>{fmtDateDisplay(confirmDelete.date)} at {confirmDelete.time}</span>? This cannot be undone.
+          </div>
+          <div style={{ display:"flex",gap:10 }}>
+            <Btn variant="ghost" onClick={()=>setConfirmDelete(null)}>Cancel</Btn>
+            <Btn variant="danger" onClick={()=>{ onDelete(confirmDelete.id); setConfirmDelete(null); setDetail(null); }}>Delete</Btn>
           </div>
         </Modal>
       )}
@@ -390,6 +413,7 @@ function CalendarView({ seizures, onDelete, onEdit, activities, onSaveActivities
   const [editing,setEditing] = useState(false);
   const [editForm,setEditForm] = useState({});
   const [saving,setSaving] = useState(false);
+  const [confirmDelete,setConfirmDelete] = useState(null);
   const year=cursor.getFullYear(), month=cursor.getMonth();
   const firstDay=new Date(year,month,1).getDay(), daysInMonth=new Date(year,month+1,0).getDate();
   const todayStr=fmtDate(new Date());
@@ -461,7 +485,19 @@ function CalendarView({ seizures, onDelete, onEdit, activities, onSaveActivities
           </div>
           <div style={{ display:"flex",gap:10 }}>
             <Btn variant="ghost" onClick={()=>openEdit(detail)}>Edit</Btn>
-            <Btn variant="danger" onClick={()=>{ onDelete(detail.id); setDetail(null); setPicked(null); }}>Delete</Btn>
+            <Btn variant="danger" onClick={()=>setConfirmDelete(detail)}>Delete</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {confirmDelete&&(
+        <Modal title="Delete seizure?" onClose={()=>setConfirmDelete(null)}>
+          <div style={{ background:C.card,borderRadius:10,padding:"12px 14px",marginBottom:20,fontSize:14,color:C.muted }}>
+            Delete the seizure recorded on <span style={{ color:C.text,fontWeight:700 }}>{fmtDateDisplay(confirmDelete.date)} at {confirmDelete.time}</span>? This cannot be undone.
+          </div>
+          <div style={{ display:"flex",gap:10 }}>
+            <Btn variant="ghost" onClick={()=>setConfirmDelete(null)}>Cancel</Btn>
+            <Btn variant="danger" onClick={()=>{ onDelete(confirmDelete.id); setConfirmDelete(null); setDetail(null); setPicked(null); }}>Delete</Btn>
           </div>
         </Modal>
       )}
