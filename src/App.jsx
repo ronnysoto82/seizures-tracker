@@ -822,200 +822,180 @@ function ReportsView({ seizures, meds }) {
   const [reportType, setReportType] = useState("seizures-all");
   const [selectedMonth, setSelectedMonth] = useState(() => fmtDate(new Date()).slice(0,7));
   const [selectedDate, setSelectedDate] = useState(() => fmtDate(new Date()));
-  const [generating, setGenerating] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const months = useMemo(() => {
     const set = new Set(seizures.map(s => s.date.slice(0,7)));
     return [...set].sort().reverse();
   }, [seizures]);
 
-  function buildSeizureRows(list) {
-    return list.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(s => `
-      <tr>
-        <td>${fmtDateDisplay(s.date)}</td>
-        <td>${s.time}</td>
-        <td>${s.duration}s</td>
-        <td>${s.activity||"Unknown"}</td>
-        <td>${s.notes||"—"}</td>
-      </tr>`).join("");
+  function parseDH(m) {
+    return Array.isArray(m.dose_history) ? m.dose_history
+      : (typeof m.dose_history==="string" ? JSON.parse(m.dose_history||"[]") : []);
   }
 
-  function buildMedRows(medList) {
-    return medList.map(m => {
-      const dh = Array.isArray(m.dose_history) ? m.dose_history
-        : (typeof m.dose_history==="string" ? JSON.parse(m.dose_history||"[]") : []);
-      const historyRows = dh.map((e,i) => {
-        const prev = dh[i-1];
-        let change = "";
-        if (prev) {
-          const p=parseFloat(prev.dose)||0, c=parseFloat(e.dose)||0;
-          change = c>p ? "↑ Increased" : c<p ? "↓ Decreased" : "~ Changed";
-        }
-        return `<tr><td>${m.name}</td><td>${e.dose}</td><td>${fmtDateDisplay(e.date)}</td><td>${change||"Initial"}</td></tr>`;
-      }).join("");
-      return historyRows;
-    }).join("");
+  function doseChange(prev, curr) {
+    if (!prev) return "Initial";
+    const p=parseFloat(prev.dose)||0, c=parseFloat(curr.dose)||0;
+    return c>p ? "↑ Increased" : c<p ? "↓ Decreased" : "~ Changed";
   }
 
-  function buildCombinedTimeline(medList) {
-    const events = [];
-    medList.forEach(m => {
-      const dh = Array.isArray(m.dose_history) ? m.dose_history
-        : (typeof m.dose_history==="string" ? JSON.parse(m.dose_history||"[]") : []);
-      dh.forEach((e,i) => {
-        const prev = dh[i-1];
-        let change = "";
-        if (prev) {
-          const p=parseFloat(prev.dose)||0, c=parseFloat(e.dose)||0;
-          change = c>p ? "↑ Increased" : c<p ? "↓ Decreased" : "~ Changed";
-        }
-        events.push({ name:m.name, dose:e.dose, date:e.date, change:change||"Initial" });
-      });
-      if (m.archived && m.archived_date) {
-        events.push({ name:m.name, dose:"—", date:m.archived_date, change:"⊘ Stopped" });
-      }
-    });
-    events.sort((a,b)=>a.date.localeCompare(b.date));
-    return events.map(e => `
-      <tr>
-        <td>${fmtDateDisplay(e.date)}</td>
-        <td>${e.name}</td>
-        <td>${e.dose}</td>
-        <td>${e.change}</td>
-      </tr>`).join("");
-  }
-
-  function generateHTML(title, tableHead, tableBody, subtitle="") {
-    return `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
-    <title>${title}</title>
-    <style>
-      body { font-family: Arial, sans-serif; padding: 32px; color: #1a1a2e; }
-      h1 { font-size: 22px; margin-bottom: 4px; color: #1a1a2e; }
-      .subtitle { font-size: 13px; color: #666; margin-bottom: 24px; }
-      .meta { font-size: 12px; color: #999; margin-bottom: 32px; }
-      table { width: 100%; border-collapse: collapse; font-size: 13px; }
-      th { background: #1a1a2e; color: white; padding: 10px 12px; text-align: left; }
-      td { padding: 9px 12px; border-bottom: 1px solid #e5e7eb; }
-      tr:nth-child(even) td { background: #f9fafb; }
-      .empty { text-align: center; color: #999; padding: 40px; }
-      @media print { body { padding: 16px; } }
-    </style></head><body>
-    <h1>${title}</h1>
-    ${subtitle?`<div class="subtitle">${subtitle}</div>`:""}
-    <div class="meta">Generated: ${new Date().toLocaleString()}</div>
-    ${tableBody ? `<table><thead><tr>${tableHead}</tr></thead><tbody>${tableBody}</tbody></table>`
-      : `<div class="empty">No data found.</div>`}
-    </body></html>`;
-  }
-
-  async function generate() {
-    setGenerating(true);
-    let html = "";
-
+  // ── Compute report data ──
+  const reportData = useMemo(() => {
     if (reportType === "seizures-all") {
-      const rows = buildSeizureRows([...seizures]);
-      html = generateHTML("Seizure Report — All",
-        "<th>Date</th><th>Time</th><th>Duration</th><th>Activity</th><th>Notes</th>",
-        rows, `Total: ${seizures.length} seizures`);
-
-    } else if (reportType === "seizures-month") {
-      const filtered = seizures.filter(s => s.date.startsWith(selectedMonth));
+      const rows = [...seizures].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+      return { title:"All Seizures", subtitle:`${rows.length} total records`, type:"seizures", rows };
+    }
+    if (reportType === "seizures-month") {
+      const rows = seizures.filter(s=>s.date.startsWith(selectedMonth))
+        .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
       const [y,m] = selectedMonth.split("-");
       const label = `${MON3[+m-1]} ${y}`;
-      html = generateHTML(`Seizure Report — ${label}`,
-        "<th>Date</th><th>Time</th><th>Duration</th><th>Activity</th><th>Notes</th>",
-        buildSeizureRows(filtered), `${filtered.length} seizures in ${label}`);
-
-    } else if (reportType === "seizures-day") {
-      const filtered = seizures.filter(s => s.date === selectedDate);
-      html = generateHTML(`Seizure Report — ${fmtDateDisplay(selectedDate)}`,
-        "<th>Date</th><th>Time</th><th>Duration</th><th>Activity</th><th>Notes</th>",
-        buildSeizureRows(filtered), `${filtered.length} seizures on ${fmtDateDisplay(selectedDate)}`);
-
-    } else if (reportType === "meds-history") {
-      html = generateHTML("Medication Dose History",
-        "<th>Medication</th><th>Dose</th><th>Date</th><th>Change</th>",
-        buildMedRows(meds), `${meds.length} medication(s)`);
-
-    } else if (reportType === "meds-combined") {
-      html = generateHTML("Combined Medication Timeline",
-        "<th>Date</th><th>Medication</th><th>Dose</th><th>Change</th>",
-        buildCombinedTimeline(meds), "All medications in chronological order");
+      return { title:`Seizures — ${label}`, subtitle:`${rows.length} seizures`, type:"seizures", rows };
     }
+    if (reportType === "seizures-day") {
+      const rows = seizures.filter(s=>s.date===selectedDate)
+        .sort((a,b)=>a.time.localeCompare(b.time));
+      return { title:`Seizures — ${fmtDateDisplay(selectedDate)}`, subtitle:`${rows.length} seizures`, type:"seizures", rows };
+    }
+    if (reportType === "meds-history") {
+      const rows = [];
+      meds.forEach(m => {
+        const dh = parseDH(m);
+        dh.forEach((e,i) => rows.push({ name:m.name, dose:e.dose, date:e.date, change:doseChange(dh[i-1],e) }));
+      });
+      return { title:"Medication Dose History", subtitle:`${meds.length} medication(s)`, type:"meds-history", rows };
+    }
+    if (reportType === "meds-combined") {
+      const rows = [];
+      meds.forEach(m => {
+        const dh = parseDH(m);
+        dh.forEach((e,i) => rows.push({ date:e.date, name:m.name, dose:e.dose, change:doseChange(dh[i-1],e) }));
+        if (m.archived && m.archived_date) rows.push({ date:m.archived_date, name:m.name, dose:"—", change:"⊘ Stopped" });
+      });
+      rows.sort((a,b)=>a.date.localeCompare(b.date));
+      return { title:"Combined Medication Timeline", subtitle:"All medications chronologically", type:"meds-combined", rows };
+    }
+    return null;
+  }, [reportType, selectedMonth, selectedDate, seizures, meds]);
 
-    // Print via iframe
+  function exportPDF() {
+    setExporting(true);
+    const { title, subtitle, type, rows } = reportData;
+    let thead = "", tbody = "";
+    if (type === "seizures") {
+      thead = "<th>Date</th><th>Time</th><th>Duration</th><th>Activity</th><th>Notes</th>";
+      tbody = rows.map(s=>`<tr><td>${fmtDateDisplay(s.date)}</td><td>${s.time}</td><td>${s.duration}s</td><td>${s.activity||"Unknown"}</td><td>${s.notes||"—"}</td></tr>`).join("");
+    } else if (type === "meds-history") {
+      thead = "<th>Medication</th><th>Dose</th><th>Date</th><th>Change</th>";
+      tbody = rows.map(r=>`<tr><td>${r.name}</td><td>${r.dose}</td><td>${fmtDateDisplay(r.date)}</td><td>${r.change}</td></tr>`).join("");
+    } else {
+      thead = "<th>Date</th><th>Medication</th><th>Dose</th><th>Change</th>";
+      tbody = rows.map(r=>`<tr><td>${fmtDateDisplay(r.date)}</td><td>${r.name}</td><td>${r.dose}</td><td>${r.change}</td></tr>`).join("");
+    }
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${title}</title>
+    <style>body{font-family:Arial,sans-serif;padding:32px;color:#1a1a2e}h1{font-size:22px;margin-bottom:4px}
+    .sub{font-size:13px;color:#666;margin-bottom:6px}.meta{font-size:11px;color:#999;margin-bottom:28px}
+    table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1a1a2e;color:#fff;padding:10px 12px;text-align:left}
+    td{padding:9px 12px;border-bottom:1px solid #e5e7eb}tr:nth-child(even) td{background:#f9fafb}
+    .empty{text-align:center;color:#999;padding:40px}@media print{body{padding:16px}}</style>
+    </head><body><h1>${title}</h1><div class="sub">${subtitle}</div>
+    <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+    ${tbody ? `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>` : `<div class="empty">No data found.</div>`}
+    </body></html>`;
     const iframe = document.createElement("iframe");
     iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:800px;height:600px;";
     document.body.appendChild(iframe);
-    iframe.contentDocument.open();
-    iframe.contentDocument.write(html);
-    iframe.contentDocument.close();
+    iframe.contentDocument.open(); iframe.contentDocument.write(html); iframe.contentDocument.close();
     iframe.contentWindow.focus();
-    setTimeout(() => {
-      iframe.contentWindow.print();
-      setTimeout(() => document.body.removeChild(iframe), 1000);
-      setGenerating(false);
-    }, 500);
+    setTimeout(()=>{ iframe.contentWindow.print(); setTimeout(()=>{ document.body.removeChild(iframe); setExporting(false); },1000); },500);
   }
 
-  const Section = ({title, children}) => (
-    <div style={{ margin:"0 16px 16px",background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}` }}>
-      <div style={{ fontSize:11,color:C.muted,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",marginBottom:14 }}>{title}</div>
-      {children}
-    </div>
+  const Tab = ({id, label}) => (
+    <button onClick={()=>setReportType(id)} style={{ flex:1,padding:"8px 4px",background:reportType===id?C.teal:"none",border:"none",borderRadius:8,color:reportType===id?"#0F1623":C.muted,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap" }}>{label}</button>
   );
 
-  const RadioBtn = ({id, label, desc}) => (
-    <div onClick={()=>setReportType(id)} style={{ display:"flex",alignItems:"flex-start",gap:12,padding:"10px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer" }}>
-      <div style={{ width:18,height:18,borderRadius:99,border:`2px solid ${reportType===id?C.teal:C.border}`,background:reportType===id?C.teal:"transparent",flexShrink:0,marginTop:2,display:"flex",alignItems:"center",justifyContent:"center" }}>
-        {reportType===id && <div style={{ width:7,height:7,borderRadius:99,background:"#0F1623" }}/>}
-      </div>
-      <div>
-        <div style={{ fontSize:14,fontWeight:600,color:C.text }}>{label}</div>
-        {desc && <div style={{ fontSize:12,color:C.muted,marginTop:2 }}>{desc}</div>}
-      </div>
-    </div>
-  );
+  const TH = ({children}) => <th style={{ padding:"8px 10px",background:C.surface,color:C.muted,fontSize:11,fontWeight:700,textAlign:"left",letterSpacing:".04em",textTransform:"uppercase",borderBottom:`1px solid ${C.border}` }}>{children}</th>;
+  const TD = ({children}) => <td style={{ padding:"9px 10px",fontSize:13,color:C.text,borderBottom:`1px solid ${C.border}` }}>{children}</td>;
 
   return (
     <div style={{ padding:"0 0 80px" }}>
       <div style={{ padding:"20px 20px 12px" }}>
         <div style={{ fontSize:22,fontWeight:800,color:C.text }}>Reports</div>
-        <div style={{ fontSize:13,color:C.muted }}>Export data as PDF</div>
+        <div style={{ fontSize:13,color:C.muted }}>View and export your data</div>
       </div>
 
-      <Section title="Seizure Reports">
-        <RadioBtn id="seizures-all" label="All seizures" desc={`${seizures.length} total records`} />
-        <RadioBtn id="seizures-month" label="By month" />
-        {reportType==="seizures-month" && (
-          <div style={{ paddingLeft:30,paddingTop:8,paddingBottom:4 }}>
-            <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}
-              style={{...inputStyle,appearance:"none"}}>
-              {months.length ? months.map(m=>{
-                const [y,mo]=m.split("-");
-                return <option key={m} value={m}>{MON3[+mo-1]} {y}</option>;
-              }) : <option value={selectedMonth}>No data</option>}
-            </select>
-          </div>
-        )}
-        <RadioBtn id="seizures-day" label="By day" />
-        {reportType==="seizures-day" && (
-          <div style={{ paddingLeft:30,paddingTop:8,paddingBottom:4 }}>
-            <Input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} />
-          </div>
-        )}
-      </Section>
-
-      <Section title="Medication Reports">
-        <RadioBtn id="meds-history" label="Medication dose history" desc="Each medication with its full dose history" />
-        <RadioBtn id="meds-combined" label="Combined medication timeline" desc="All medications in a single chronological view" />
-      </Section>
-
-      <div style={{ padding:"0 16px" }}>
-        <Btn onClick={generate} disabled={generating}>
-          {generating ? "Generating…" : "📄  Generate PDF"}
-        </Btn>
+      {/* Report type selector */}
+      <div style={{ margin:"0 16px 12px",background:C.card,borderRadius:12,padding:6,border:`1px solid ${C.border}` }}>
+        <div style={{ display:"flex",gap:4,marginBottom:4 }}>
+          <Tab id="seizures-all" label="All seizures" />
+          <Tab id="seizures-month" label="By month" />
+          <Tab id="seizures-day" label="By day" />
+        </div>
+        <div style={{ display:"flex",gap:4 }}>
+          <Tab id="meds-history" label="Med history" />
+          <Tab id="meds-combined" label="Med timeline" />
+        </div>
       </div>
+
+      {/* Filters */}
+      {reportType==="seizures-month" && (
+        <div style={{ margin:"0 16px 12px" }}>
+          <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}
+            style={{...inputStyle,appearance:"none"}}>
+            {months.length ? months.map(m=>{ const [y,mo]=m.split("-"); return <option key={m} value={m}>{MON3[+mo-1]} {y}</option>; })
+              : <option value={selectedMonth}>No data</option>}
+          </select>
+        </div>
+      )}
+      {reportType==="seizures-day" && (
+        <div style={{ margin:"0 16px 12px" }}>
+          <Input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} />
+        </div>
+      )}
+
+      {/* Report preview */}
+      {reportData && (
+        <div style={{ margin:"0 16px 16px",background:C.card,borderRadius:16,border:`1px solid ${C.border}`,overflow:"hidden" }}>
+          {/* Header */}
+          <div style={{ padding:"14px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
+            <div>
+              <div style={{ fontSize:15,fontWeight:700,color:C.text }}>{reportData.title}</div>
+              <div style={{ fontSize:12,color:C.muted,marginTop:2 }}>{reportData.subtitle}</div>
+            </div>
+            <button onClick={exportPDF} disabled={exporting} style={{ background:C.teal,border:"none",borderRadius:8,color:"#0F1623",fontWeight:700,fontSize:12,padding:"7px 12px",cursor:"pointer",flexShrink:0,opacity:exporting?0.6:1 }}>
+              {exporting?"…":"Export PDF"}
+            </button>
+          </div>
+
+          {/* Table */}
+          {reportData.rows.length === 0
+            ? <div style={{ textAlign:"center",color:C.muted,padding:"40px 20px",fontSize:13 }}>No data for this selection.</div>
+            : <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%",borderCollapse:"collapse" }}>
+                  <thead>
+                    <tr>
+                      {reportData.type==="seizures" && <><TH>Date</TH><TH>Time</TH><TH>Duration</TH><TH>Activity</TH><TH>Notes</TH></>}
+                      {reportData.type==="meds-history" && <><TH>Medication</TH><TH>Dose</TH><TH>Date</TH><TH>Change</TH></>}
+                      {reportData.type==="meds-combined" && <><TH>Date</TH><TH>Medication</TH><TH>Dose</TH><TH>Change</TH></>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reportData.type==="seizures" && reportData.rows.map((s,i)=>(
+                      <tr key={i}><TD>{fmtDateDisplay(s.date)}</TD><TD>{s.time}</TD><TD>{s.duration}s</TD><TD>{s.activity||"Unknown"}</TD><TD>{s.notes||"—"}</TD></tr>
+                    ))}
+                    {reportData.type==="meds-history" && reportData.rows.map((r,i)=>(
+                      <tr key={i}><TD>{r.name}</TD><TD>{r.dose}</TD><TD>{fmtDateDisplay(r.date)}</TD><TD>{r.change}</TD></tr>
+                    ))}
+                    {reportData.type==="meds-combined" && reportData.rows.map((r,i)=>(
+                      <tr key={i}><TD>{fmtDateDisplay(r.date)}</TD><TD>{r.name}</TD><TD>{r.dose}</TD><TD>{r.change}</TD></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+          }
+        </div>
+      )}
     </div>
   );
 }
