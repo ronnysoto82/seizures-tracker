@@ -894,21 +894,35 @@ function ReportsView({ seizures, meds }) {
       tbody = rows.map(r=>`<tr><td>${fmtDateDisplay(r.date)}</td><td>${r.name}</td><td>${r.dose}</td><td>${r.change}</td></tr>`).join("");
     }
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${title}</title>
-    <style>body{font-family:Arial,sans-serif;padding:32px;color:#1a1a2e}h1{font-size:22px;margin-bottom:4px}
-    .sub{font-size:13px;color:#666;margin-bottom:6px}.meta{font-size:11px;color:#999;margin-bottom:28px}
-    table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1a1a2e;color:#fff;padding:10px 12px;text-align:left}
-    td{padding:9px 12px;border-bottom:1px solid #e5e7eb}tr:nth-child(even) td{background:#f9fafb}
-    .empty{text-align:center;color:#999;padding:40px}@media print{body{padding:16px}}</style>
-    </head><body><h1>${title}</h1><div class="sub">${subtitle}</div>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 40px; color: #1a1a2e; }
+      h1 { font-size: 22px; margin-bottom: 4px; }
+      .sub { font-size: 13px; color: #555; margin-bottom: 4px; }
+      .meta { font-size: 11px; color: #999; margin-bottom: 28px; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th { background: #1a1a2e; color: #fff; padding: 10px 12px; text-align: left; font-size: 12px; letter-spacing: .04em; }
+      td { padding: 9px 12px; border-bottom: 1px solid #e5e7eb; }
+      tr:nth-child(even) td { background: #f9fafb; }
+      .empty { text-align: center; color: #999; padding: 40px; }
+      @media print { body { padding: 20px; } button { display: none; } }
+    </style></head><body>
+    <h1>${title}</h1>
+    <div class="sub">${subtitle}</div>
     <div class="meta">Generated: ${new Date().toLocaleString()}</div>
-    ${tbody ? `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>` : `<div class="empty">No data found.</div>`}
+    ${tbody
+      ? `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`
+      : `<div class="empty">No data found for this selection.</div>`
+    }
+    <script>window.onload = function(){ window.print(); }<\/script>
     </body></html>`;
-    const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:800px;height:600px;";
-    document.body.appendChild(iframe);
-    iframe.contentDocument.open(); iframe.contentDocument.write(html); iframe.contentDocument.close();
-    iframe.contentWindow.focus();
-    setTimeout(()=>{ iframe.contentWindow.print(); setTimeout(()=>{ document.body.removeChild(iframe); setExporting(false); },1000); },500);
+
+    const win = window.open("", "_blank");
+    if (win) {
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+    }
+    setExporting(false);
   }
 
   const Tab = ({id, label}) => (
