@@ -817,6 +817,209 @@ function SettingsView({ activities, onSaveActivities, onSignOut }) {
   );
 }
 
+// ── ReportsView ───────────────────────────────────────────────────
+function ReportsView({ seizures, meds }) {
+  const [reportType, setReportType] = useState("seizures-all");
+  const [selectedMonth, setSelectedMonth] = useState(() => fmtDate(new Date()).slice(0,7));
+  const [selectedDate, setSelectedDate] = useState(() => fmtDate(new Date()));
+  const [generating, setGenerating] = useState(false);
+
+  const months = useMemo(() => {
+    const set = new Set(seizures.map(s => s.date.slice(0,7)));
+    return [...set].sort().reverse();
+  }, [seizures]);
+
+  function buildSeizureRows(list) {
+    return list.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(s => `
+      <tr>
+        <td>${fmtDateDisplay(s.date)}</td>
+        <td>${s.time}</td>
+        <td>${s.duration}s</td>
+        <td>${s.activity||"Unknown"}</td>
+        <td>${s.notes||"—"}</td>
+      </tr>`).join("");
+  }
+
+  function buildMedRows(medList) {
+    return medList.map(m => {
+      const dh = Array.isArray(m.dose_history) ? m.dose_history
+        : (typeof m.dose_history==="string" ? JSON.parse(m.dose_history||"[]") : []);
+      const historyRows = dh.map((e,i) => {
+        const prev = dh[i-1];
+        let change = "";
+        if (prev) {
+          const p=parseFloat(prev.dose)||0, c=parseFloat(e.dose)||0;
+          change = c>p ? "↑ Increased" : c<p ? "↓ Decreased" : "~ Changed";
+        }
+        return `<tr><td>${m.name}</td><td>${e.dose}</td><td>${fmtDateDisplay(e.date)}</td><td>${change||"Initial"}</td></tr>`;
+      }).join("");
+      return historyRows;
+    }).join("");
+  }
+
+  function buildCombinedTimeline(medList) {
+    const events = [];
+    medList.forEach(m => {
+      const dh = Array.isArray(m.dose_history) ? m.dose_history
+        : (typeof m.dose_history==="string" ? JSON.parse(m.dose_history||"[]") : []);
+      dh.forEach((e,i) => {
+        const prev = dh[i-1];
+        let change = "";
+        if (prev) {
+          const p=parseFloat(prev.dose)||0, c=parseFloat(e.dose)||0;
+          change = c>p ? "↑ Increased" : c<p ? "↓ Decreased" : "~ Changed";
+        }
+        events.push({ name:m.name, dose:e.dose, date:e.date, change:change||"Initial" });
+      });
+      if (m.archived && m.archived_date) {
+        events.push({ name:m.name, dose:"—", date:m.archived_date, change:"⊘ Stopped" });
+      }
+    });
+    events.sort((a,b)=>a.date.localeCompare(b.date));
+    return events.map(e => `
+      <tr>
+        <td>${fmtDateDisplay(e.date)}</td>
+        <td>${e.name}</td>
+        <td>${e.dose}</td>
+        <td>${e.change}</td>
+      </tr>`).join("");
+  }
+
+  function generateHTML(title, tableHead, tableBody, subtitle="") {
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+    <title>${title}</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 32px; color: #1a1a2e; }
+      h1 { font-size: 22px; margin-bottom: 4px; color: #1a1a2e; }
+      .subtitle { font-size: 13px; color: #666; margin-bottom: 24px; }
+      .meta { font-size: 12px; color: #999; margin-bottom: 32px; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th { background: #1a1a2e; color: white; padding: 10px 12px; text-align: left; }
+      td { padding: 9px 12px; border-bottom: 1px solid #e5e7eb; }
+      tr:nth-child(even) td { background: #f9fafb; }
+      .empty { text-align: center; color: #999; padding: 40px; }
+      @media print { body { padding: 16px; } }
+    </style></head><body>
+    <h1>${title}</h1>
+    ${subtitle?`<div class="subtitle">${subtitle}</div>`:""}
+    <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+    ${tableBody ? `<table><thead><tr>${tableHead}</tr></thead><tbody>${tableBody}</tbody></table>`
+      : `<div class="empty">No data found.</div>`}
+    </body></html>`;
+  }
+
+  async function generate() {
+    setGenerating(true);
+    let html = "";
+
+    if (reportType === "seizures-all") {
+      const rows = buildSeizureRows([...seizures]);
+      html = generateHTML("Seizure Report — All",
+        "<th>Date</th><th>Time</th><th>Duration</th><th>Activity</th><th>Notes</th>",
+        rows, `Total: ${seizures.length} seizures`);
+
+    } else if (reportType === "seizures-month") {
+      const filtered = seizures.filter(s => s.date.startsWith(selectedMonth));
+      const [y,m] = selectedMonth.split("-");
+      const label = `${MON3[+m-1]} ${y}`;
+      html = generateHTML(`Seizure Report — ${label}`,
+        "<th>Date</th><th>Time</th><th>Duration</th><th>Activity</th><th>Notes</th>",
+        buildSeizureRows(filtered), `${filtered.length} seizures in ${label}`);
+
+    } else if (reportType === "seizures-day") {
+      const filtered = seizures.filter(s => s.date === selectedDate);
+      html = generateHTML(`Seizure Report — ${fmtDateDisplay(selectedDate)}`,
+        "<th>Date</th><th>Time</th><th>Duration</th><th>Activity</th><th>Notes</th>",
+        buildSeizureRows(filtered), `${filtered.length} seizures on ${fmtDateDisplay(selectedDate)}`);
+
+    } else if (reportType === "meds-history") {
+      html = generateHTML("Medication Dose History",
+        "<th>Medication</th><th>Dose</th><th>Date</th><th>Change</th>",
+        buildMedRows(meds), `${meds.length} medication(s)`);
+
+    } else if (reportType === "meds-combined") {
+      html = generateHTML("Combined Medication Timeline",
+        "<th>Date</th><th>Medication</th><th>Dose</th><th>Change</th>",
+        buildCombinedTimeline(meds), "All medications in chronological order");
+    }
+
+    // Print via iframe
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:800px;height:600px;";
+    document.body.appendChild(iframe);
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 1000);
+      setGenerating(false);
+    }, 500);
+  }
+
+  const Section = ({title, children}) => (
+    <div style={{ margin:"0 16px 16px",background:C.card,borderRadius:16,padding:"14px 16px",border:`1px solid ${C.border}` }}>
+      <div style={{ fontSize:11,color:C.muted,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",marginBottom:14 }}>{title}</div>
+      {children}
+    </div>
+  );
+
+  const RadioBtn = ({id, label, desc}) => (
+    <div onClick={()=>setReportType(id)} style={{ display:"flex",alignItems:"flex-start",gap:12,padding:"10px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer" }}>
+      <div style={{ width:18,height:18,borderRadius:99,border:`2px solid ${reportType===id?C.teal:C.border}`,background:reportType===id?C.teal:"transparent",flexShrink:0,marginTop:2,display:"flex",alignItems:"center",justifyContent:"center" }}>
+        {reportType===id && <div style={{ width:7,height:7,borderRadius:99,background:"#0F1623" }}/>}
+      </div>
+      <div>
+        <div style={{ fontSize:14,fontWeight:600,color:C.text }}>{label}</div>
+        {desc && <div style={{ fontSize:12,color:C.muted,marginTop:2 }}>{desc}</div>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ padding:"0 0 80px" }}>
+      <div style={{ padding:"20px 20px 12px" }}>
+        <div style={{ fontSize:22,fontWeight:800,color:C.text }}>Reports</div>
+        <div style={{ fontSize:13,color:C.muted }}>Export data as PDF</div>
+      </div>
+
+      <Section title="Seizure Reports">
+        <RadioBtn id="seizures-all" label="All seizures" desc={`${seizures.length} total records`} />
+        <RadioBtn id="seizures-month" label="By month" />
+        {reportType==="seizures-month" && (
+          <div style={{ paddingLeft:30,paddingTop:8,paddingBottom:4 }}>
+            <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}
+              style={{...inputStyle,appearance:"none"}}>
+              {months.length ? months.map(m=>{
+                const [y,mo]=m.split("-");
+                return <option key={m} value={m}>{MON3[+mo-1]} {y}</option>;
+              }) : <option value={selectedMonth}>No data</option>}
+            </select>
+          </div>
+        )}
+        <RadioBtn id="seizures-day" label="By day" />
+        {reportType==="seizures-day" && (
+          <div style={{ paddingLeft:30,paddingTop:8,paddingBottom:4 }}>
+            <Input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} />
+          </div>
+        )}
+      </Section>
+
+      <Section title="Medication Reports">
+        <RadioBtn id="meds-history" label="Medication dose history" desc="Each medication with its full dose history" />
+        <RadioBtn id="meds-combined" label="Combined medication timeline" desc="All medications in a single chronological view" />
+      </Section>
+
+      <div style={{ padding:"0 16px" }}>
+        <Btn onClick={generate} disabled={generating}>
+          {generating ? "Generating…" : "📄  Generate PDF"}
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────
 export default function App() {
   const [session,setSession] = useState(null);
@@ -940,7 +1143,7 @@ export default function App() {
   if(loading) return <div style={{ background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center" }}><Spinner/></div>;
   if(!session) return <LoginScreen onLogin={handleLogin} />;
 
-  const tabs=[{id:"log",icon:"📋",label:"Log"},{id:"calendar",icon:"📅",label:"Calendar"},{id:"trends",icon:"📈",label:"Trends"},{id:"meds",icon:"💊",label:"Meds"}];
+  const tabs=[{id:"log",icon:"📋",label:"Log"},{id:"calendar",icon:"📅",label:"Calendar"},{id:"trends",icon:"📈",label:"Trends"},{id:"meds",icon:"💊",label:"Meds"},{id:"reports",icon:"📄",label:"Reports"}];
 
   return (
     <div style={{ background:C.bg,minHeight:"100vh",maxWidth:420,margin:"0 auto",fontFamily:"'Inter',system-ui,sans-serif",color:C.text }}>
@@ -956,6 +1159,7 @@ export default function App() {
         {tab==="calendar"&&<CalendarView seizures={seizures} onDelete={deleteSeizure} onEdit={editSeizure} activities={activities} onSaveActivities={saveActivities}/>}
         {tab==="trends"&&<TrendsView seizures={seizures}/>}
         {tab==="meds"&&<MedView meds={meds} onAdd={addMed} onArchive={archiveMed} onRestore={restoreMed} onDelete={deleteMed} onChangeDose={changeDose} onUpdatePhoto={updateMedPhoto} onEdit={updateMed} loading={loadingMeds}/>}
+        {tab==="reports"&&<ReportsView seizures={seizures} meds={meds}/>}
       </div>
       <div style={{ position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:420,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",padding:"10px 0 16px" }}>
         {tabs.map(t=>(
